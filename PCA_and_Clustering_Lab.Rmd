@@ -1,0 +1,307 @@
+---
+title: "PCA and Clustering Analysis on Car Sales"
+author: "Giovanni Del Piano"
+date: "2025-05-02"
+output:
+  html_document:
+    theme: default
+    toc: true
+    toc_float: true
+    number_sections: true
+    code_folding: hide
+    highlight: tango
+  pdf_document:
+    toc: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  eval = TRUE,    # Ensure all chunks execute
+  echo = TRUE,    # Show the code in the output
+  warning = FALSE, # Suppress warnings
+  message = FALSE  # Suppress messages
+)
+```
+
+
+# Introduzione
+
+In questa lezione, esploreremo la **Principal Component Analysis (PCA)** per la riduzione dimensionale e il **clustering non gerarchico** (k-means) per identificare gruppi omogenei all’interno dei dati. Usiamo un dataset che descrive caratteristiche chimiche di diversi vini.
+
+---
+
+# Cos'è la PCA?
+
+La **Principal Component Analysis** è una tecnica non supervisionata usata per ridurre la dimensionalità di un dataset mantenendo la maggior parte della **varianza** dei dati originali. 
+
+### Obiettivi principali della PCA:
+
+- Ridurre il numero di variabili mantenendo l'informazione.
+- Identificare nuove variabili (componenti principali) non correlate.
+- Visualizzare dati complessi in 2D o 3D.
+
+> La PCA proietta i dati su nuove direzioni (componenti principali) che spiegano la massima varianza, ordinate in modo decrescente.
+
+---
+
+# Caricamento e Preprocessing del Dataset {.tabset .tabset-fade .tabset-pills}
+
+```{r}
+library(ggplot2)
+library(FactoMineR)
+library(factoextra)
+library(corrplot)
+library(PerformanceAnalytics)
+library(readxl)
+library(dplyr)
+library(DescTools)
+
+setwd("C:\\Users\\Windows 10\\OneDrive\\Desktop\\LUISS LESSON\\02 script\\data")
+#upload the dataset
+car_sales = read_excel("car_sales.xlsx", sheet='data')
+```
+
+## DataFrame
+```{r message=FALSE, warning=FALSE}
+# DataFrame
+head(car_sales)
+```
+
+## Data Dictionary
+
+| Variable         | Description                                | 
+|:----------------|:--------------------------------------------|
+| Manufacturer    | Nome del Brand                              |
+| Model           | Modello della macchina                      |
+| Sales           | Numero di vendite                           |
+| Vehicle_type    | Tipo di veicolo                             |
+| Price           | Prezzo del veicolo in dollari               |        
+| Engine_size     | Volume dei cilindri                         |
+| Horsepower      | Numero di cavalli                           |
+| Wheelbase       | Distanza degli assi                         |
+| Width           | Larghezza del veicolo                       |
+| Length          | Lunghezza del veicolo                       |
+| Curb_weight     | Peso del veicolo a secco                    |
+| Fuel_capacity   | Capacità di rifornimento                    |
+| Fuel_efficiency | Fuel efficiency (gallon / miles)            |
+| Latest_launch   | Data di lancio                              |
+| Nationality     | Paese del brand                             |
+
+
+## Summary
+```{r message=FALSE, warning=FALSE}
+# Summary
+summary(car_sales)
+```
+
+## Glimpse
+```{r message=FALSE, warning=FALSE}
+# Glimpse
+glimpse(car_sales)
+```
+```{r}
+summary(car_sales$Price)
+```
+
+## Structure
+```{r message=FALSE, warning=FALSE}
+# Let' add a Price Level feature
+
+car_sales$Price_level = case_when(
+  car_sales$Price<=15000 ~ "Low",
+  car_sales$Price<=30000 ~ "Medium",
+  car_sales$Price<=55000 ~ "Medium_High",
+  TRUE ~ "High"
+)
+
+# Structure
+str(car_sales)
+```
+# Data Exploration {.tabset .tabset-fade .tabset-pills}
+
+Esploriamo il dato constatando distribuzioni delle variabili e correlazioni
+
+## Pair Plot
+```{r}
+# Selecting numerical variables
+car_sales_num = car_sales %>% select_if(is.numeric) %>% select(-"Price")
+rownames(car_sales_num) = car_sales$Manufacter_Model
+rownames(car_sales) = car_sales$Manufacter_Model
+# plot distributions and correlations for each pair of variables
+chart.Correlation(car_sales_num, histogram=TRUE, pch=19)
+```
+
+## Correlation Plot
+```{r}
+corrplot(cor(car_sales_num), type="upper", order="hclust", tl.col="black", tl.srt=45)
+```
+
+## Distribution Plot
+```{r}
+for (col in colnames(car_sales)) {
+  if (is.numeric(car_sales[[col]])) {
+    PlotFdist(car_sales[[col]], main = col, xlab = col)  
+  }
+}
+```
+
+Come mostrato di seguito, esiste una **forte correlazione positiva** tra le variabili
+quantitative che descrivono le caratteristiche meccaniche, come le dimensioni, 
+la potenza del motore e la capacità del serbatoio. Come ci si potrebbe aspettare, 
+queste variabili sono negativamente correlate con l’efficienza del carburante.
+
+Per quanto riguarda la variabile che descrive il numero di vendite, si osserva che 
+presenta basse correlazioni con le altre variabili quantitative, ad eccezione della 
+variabile "Wheelbase", per la quale il coefficiente di correlazione è pari a 0.4.
+
+# PCA ANALYSIS
+```{r}
+# PCA con centering e scaling
+pca <- prcomp(car_sales_num, center = TRUE, scale. = TRUE)
+
+# Sommario dei componenti
+summary(pca)
+```
+## Scree Plot
+
+```{r}
+fviz_eig(pca, addlabels = TRUE, ylim = c(0, 80))
+```
+
+Il grafico mostra quanta varianza spiega ciascuna componente. Le prime 2 o 3 componenti spesso sono sufficienti per rappresentare i dati.
+
+Osservando gli autovalori, le prime due dimensioni contengono il 78% dell'inerzia totale (varianza). Questa percentuale è accettabile per mantenere i primi due assi principali per il resto della nostra analisi, anche in base alla “Regola di Kaiser”.
+
+## Interpretazione delle componenti {.tabset .tabset-fade .tabset-pills}
+
+### PCA Biplot
+
+```{r}
+# Change of the cartesian system
+pca$rotation=-pca$rotation
+pca$x=-pca$x
+
+
+
+# Biplot with price level labels
+fviz_pca_biplot(pca, label = "var", habillage=car_sales$Price_level)
+```
+ 
+### Cos2: Quality of the variabes on the factor map
+
+```{r}
+# Graph of variables (cos2 = the quality of the variables on the factor map)
+fviz_pca_var(pca, col.var = "cos2",
+             gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"),
+             repel = TRUE)
+```
+
+### Corrplot with Dimensions
+
+```{r}
+var1 = get_pca_var( pca)
+# var$cos2: represents the quality of representation for variables on the factor
+# map. It's calculated as the squared coordinates: var$cos2 = var$coord ^2
+
+corrplot(var1$cos2, is.corr=FALSE)
+```
+ 
+Un cos2 elevato indica una buona rappresentazione della variabile sulla componente principale. In questo caso la variabile è posizionata vicino alla circonferenza del cerchio di correlazione.
+
+Il grafico  mostra che le variabili “Engine_size” e ‘Horse_power’ sono correlate negativamente con la variabile “Fuel_efficiency”.
+
+
+Questi risultati sembrano abbastanza logici, perché quanto più grande e potente è un motore, tanto più alto sarà il suo consumo. Pertanto, l'efficienza energetica
+sarà bassa (valore elevato in litri/km o galloni/miglia).
+
+La variabile “Sales” non è molto correlata con le variabili ‘Horse_power’, “Engine_size” e “Fuel_Efficiency”.
+
+
+---
+
+# Cos'è il Clustering Non Gerarchico?
+
+Il **clustering** è una tecnica non supervisionata per raggruppare osservazioni simili. Il metodo **k-means** è tra i più usati:
+
+## Come funziona k-means:
+
+1. Scegliere il numero di cluster \( k \).
+2. Inizializzare casualmente \( k \) centroidi.
+3. Assegnare ciascun punto al centroide più vicino.
+4. Aggiornare i centroidi come media dei punti assegnati.
+5. Ripetere fino a convergenza.
+
+> Il clustering è utile per scoprire **pattern latenti** nei dati.
+
+
+## Determinare il numero ottimale di cluster
+
+```{r}
+fviz_nbclust(pca$x[, 1:3], kmeans, method = "wss") + 
+  geom_vline(xintercept = 5, linetype = 2) +
+  labs(subtitle = "Metodo Elbow")
+
+```
+
+```{r}
+pca$x[, 1:3] %>% 
+  scale() %>% 
+  fviz_nbclust(FUN = hcut, method = 'silhouette')
+```
+
+
+## Clustering k-means
+
+```{r}
+set.seed(123)
+kmeans_res <- kmeans(pca$x[, 1:3], centers = 5, nstart = 15)
+
+# Visualizzazione
+fviz_cluster(kmeans_res, data = pca$x[, 1:3],
+             geom = "point",
+             palette = "jco",
+             ggtheme = theme_minimal())
+```
+
+---
+
+## Confronto con i gruppi reali
+
+```{r}
+table(Cluster = kmeans_res$cluster, Prezzo = car_sales$Price_level)
+```
+
+```{r}
+
+kmeans_res <- kmeans(pca$x[, 1:3], centers = 3, nstart = 50)
+
+# Visualizzazione
+fviz_cluster(kmeans_res, data = pca$x[, 1:3],
+             geom = "point",
+             palette = "jco",
+             ggtheme = theme_minimal())
+
+# Let' add a Price Level feature
+
+car_sales$Price_level = case_when(
+  car_sales$Price<=25000 ~ "Low",
+  car_sales$Price<=35000 ~ "Medium",
+  TRUE ~ "High"
+)
+
+```
+
+
+```{r}
+table(Cluster = kmeans_res$cluster, Prezzo = car_sales$Price_level)
+```
+
+## Conclusioni
+
+I risultati che abbiamo ottenuto ci mostrano un aspetto importante del fenomeno in analisi e cioè che non sempre il prezzo delle auto può essere legato linearmente alle caratteristiche del veicolo. Questo può derivare in parte da mancanza di informazioni così come dall'ampiezza del dataset, tuttavia è sempre bene tenere a mente che ci sono dei fattori endogeni che non consentono una spiegabilità completamente lineare del fenomeno. L'adozione di una base dati più ampia e completa congiuntamente alla sperimentazione di altri algoritmi di clustering (come quello non gerarchico) e riduzione della dimensionalità può aiutarci a comprendere meglio un fenomeno che risulta indissolubilmente artificiale e legato a ragioni di mercato che potrebbero non essere del tutto esplicite.  
+
+- La PCA consente di ridurre la dimensionalità dei dati preservandone l'informazione più importante.
+- Il clustering non supervisionato può individuare strutture latenti nei dati.
+- La combinazione di PCA + k-means è molto potente per esplorare dataset complessi.
+
+
